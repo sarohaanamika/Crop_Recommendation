@@ -40,9 +40,9 @@ services:
     container_name: crop-recommendation-green
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
-      interval: 10s
-      timeout: 5s
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]  # Use /health endpoint
+      interval: 30s
+      timeout: 10s
       retries: 3
       start_period: 30s
     networks:

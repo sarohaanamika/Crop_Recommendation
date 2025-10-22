@@ -16,9 +16,11 @@ def create_app(config_class=Config):
     # Register blueprints
     from app.routes.health import health_bp
     from app.routes.predict import predict_bp
+    from app.routes.webhook import webhook_bp
     
     app.register_blueprint(health_bp)
     app.register_blueprint(predict_bp)
+    app.register_blueprint(webhook_bp)  # Add this line
 
     # Add root route to serve the HTML page
     @app.route('/')
