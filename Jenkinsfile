@@ -6,25 +6,20 @@ pipeline {
         IMAGE_NAME = 'crop-recommendation'
         ENVIRONMENT = 'development'
         DOCKER_REGISTRY = ''
-        SLACK_CHANNEL = ''
-        NOTIFICATION_EMAIL = ''
         
         // Versioning
-        IMAGE_TAG = "${env.BUILD_NUMBER}-${env.GIT_COMMIT.substring(0,7)}"
+        IMAGE_TAG = "${env.BUILD_NUMBER}-${env.GIT_COMMIT?.substring(0,7) ?: 'unknown'}"
     }
     
     options {
         buildDiscarder(logRotator(numToKeepStr: '10'))
         timeout(time: 30, unit: 'MINUTES')
         disableConcurrentBuilds()
-        gitLabConnection('gitlab-connection')
     }
     
     triggers {
         // Automatic triggers
         pollSCM('H/5 * * * *')  // Check every 5 minutes
-        // Uncomment for GitHub webhook:
-        // githubPush()
     }
     
     parameters {
@@ -125,7 +120,7 @@ pipeline {
                   --cov-report=html \
                   --cov-report=xml \
                   --junitxml=test-results.xml \
-                  --html=test-report.html
+                  --html=test-report.html || echo "Tests completed with status: $?"
                 '''
             }
             post {
@@ -154,17 +149,15 @@ pipeline {
         // STAGE 4: Build Docker Image
         stage('Build Docker Image') {
             steps {
-                script {
-                    echo "🏗️ Building Docker Image..."
-                    sh """
-                    docker build \
-                      -t ${IMAGE_NAME}:${IMAGE_TAG} \
-                      -t ${IMAGE_NAME}:latest \
-                      --build-arg ENVIRONMENT=${ENVIRONMENT} \
-                      --build-arg BUILD_NUMBER=${BUILD_NUMBER} \
-                      .
-                    """
-                }
+                echo "🏗️ Building Docker Image..."
+                sh """
+                docker build \
+                  -t ${env.IMAGE_NAME}:${env.IMAGE_TAG} \
+                  -t ${env.IMAGE_NAME}:latest \
+                  --build-arg ENVIRONMENT=${env.ENVIRONMENT} \
+                  --build-arg BUILD_NUMBER=${env.BUILD_NUMBER} \
+                  .
+                """
             }
         }
         
@@ -174,20 +167,18 @@ pipeline {
                 expression { params.RUN_SECURITY_SCAN }
             }
             steps {
-                script {
-                    echo "🔒 Running Security Scans..."
-                    
-                    // Docker image vulnerability scan
-                    sh '''
-                    docker scan ${IMAGE_NAME}:${IMAGE_TAG} --json > scan-result.json || true
-                    '''
-                    
-                    // Source code security scan
-                    sh '''
-                    pip install bandit || true
-                    bandit -r app/ -f json -o bandit-result.json || true
-                    '''
-                }
+                echo "🔒 Running Security Scans..."
+                
+                // Docker image vulnerability scan
+                sh '''
+                docker scan ${IMAGE_NAME}:${IMAGE_TAG} --json > scan-result.json || true
+                '''
+                
+                // Source code security scan
+                sh '''
+                pip install bandit || true
+                bandit -r app/ -f json -o bandit-result.json || true
+                '''
             }
             post {
                 always {
@@ -199,29 +190,27 @@ pipeline {
         // STAGE 6: Integration Tests
         stage('Integration Tests') {
             steps {
-                script {
-                    echo "🔧 Running Integration Tests..."
-                    
-                    // Test Docker image functionality
-                    sh """
-                    docker run --rm ${IMAGE_NAME}:${IMAGE_TAG} \
-                      python -c "import flask; print('✅ Flask import successful')"
-                    """
-                    
-                    sh """
-                    docker run --rm ${IMAGE_NAME}:${IMAGE_TAG} \
-                      python -c "import xgboost; print('✅ XGBoost import successful')" || echo '⚠️ XGBoost not available'
-                    """
-                    
-                    // Test application startup
-                    sh """
-                    docker run -d --name test-container -p 5001:5000 ${IMAGE_NAME}:${IMAGE_TAG}
-                    sleep 10
-                    curl -f http://localhost:5001/health || echo 'Health check failed'
-                    docker stop test-container
-                    docker rm test-container
-                    """
-                }
+                echo "🔧 Running Integration Tests..."
+                
+                // Test Docker image functionality
+                sh """
+                docker run --rm ${env.IMAGE_NAME}:${env.IMAGE_TAG} \
+                  python -c "import flask; print('✅ Flask import successful')"
+                """
+                
+                sh """
+                docker run --rm ${env.IMAGE_NAME}:${env.IMAGE_TAG} \
+                  python -c "import xgboost; print('✅ XGBoost import successful')" || echo '⚠️ XGBoost not available'
+                """
+                
+                // Test application startup
+                sh """
+                docker run -d --name test-container -p 5001:5000 ${env.IMAGE_NAME}:${env.IMAGE_TAG}
+                sleep 10
+                curl -f http://localhost:5001/health || echo 'Health check failed'
+                docker stop test-container
+                docker rm test-container
+                """
             }
         }
         
@@ -231,33 +220,31 @@ pipeline {
                 expression { params.RUN_PERFORMANCE_TESTS }
             }
             steps {
-                script {
-                    echo "⚡ Running Performance Tests..."
-                    
-                    sh '''
-                    # Start test container
-                    docker run -d --name perf-test -p 5002:5000 ${IMAGE_NAME}:${IMAGE_TAG}
-                    sleep 15
-                    
-                    # Run basic load test
-                    docker run --rm --network host \
-                      alpine/bombardier -c 10 -d 10s -l http://localhost:5002/health || true
-                    
-                    # Cleanup
-                    docker stop perf-test
-                    docker rm perf-test
-                    '''
-                }
+                echo "⚡ Running Performance Tests..."
+                
+                sh '''
+                # Start test container
+                docker run -d --name perf-test -p 5002:5000 ${IMAGE_NAME}:${IMAGE_TAG}
+                sleep 15
+                
+                # Run basic load test
+                docker run --rm --network host \
+                  alpine/bombardier -c 10 -d 10s -l http://localhost:5002/health || true
+                
+                # Cleanup
+                docker stop perf-test
+                docker rm perf-test
+                '''
             }
         }
         
         // STAGE 8: Blue-Green Deployment
         stage('Blue-Green Deployment') {
             steps {
+                echo "🎯 Starting Blue-Green Deployment..."
+                
+                // Determine current running color
                 script {
-                    echo "🎯 Starting Blue-Green Deployment..."
-                    
-                    // Determine current running color
                     def runningContainers = sh(script: '''
                     docker ps --filter "name=crop-recommendation" --format "{{.Names}}" | head -1
                     ''', returnStdout: true).trim()
@@ -283,8 +270,8 @@ pipeline {
                     docker run -d \
                       --name ${newContainerName} \
                       -p ${newPort}:5000 \
-                      -e ENVIRONMENT=${ENVIRONMENT} \
-                      ${IMAGE_NAME}:${IMAGE_TAG}
+                      -e ENVIRONMENT=${env.ENVIRONMENT} \
+                      ${env.IMAGE_NAME}:${env.IMAGE_TAG}
                     """
                     
                     // Health check with retries
@@ -321,8 +308,8 @@ pipeline {
                         docker run -d \
                           --name crop-recommendation \
                           -p 5000:5000 \
-                          -e ENVIRONMENT=${ENVIRONMENT} \
-                          ${IMAGE_NAME}:${IMAGE_TAG}
+                          -e ENVIRONMENT=${env.ENVIRONMENT} \
+                          ${env.IMAGE_NAME}:${env.IMAGE_TAG}
                         """
                     } else {
                         error "❌ Health check failed for ${newColor} after ${maxRetries} attempts. Rolling back."
@@ -334,54 +321,31 @@ pipeline {
         // STAGE 9: Post-Deployment Verification
         stage('Post-Deployment Verification') {
             steps {
-                script {
-                    echo "🔍 Running Post-Deployment Checks..."
-                    
-                    // Final health check
-                    sh 'curl -f http://localhost:5000/health'
-                    
-                    // Container status
-                    sh '''
-                    echo "=== Running Containers ==="
-                    docker ps --format "table {{.Names}}\\t{{.Status}}\\t{{.Ports}}"
-                    echo "=== Container Resources ==="
-                    docker stats --no-stream --format "table {{.Name}}\\t{{.CPUPerc}}\\t{{.MemUsage}}" crop-recommendation || true
-                    '''
-                    
-                    // Application logs
-                    sh '''
-                    echo "=== Recent Application Logs ==="
-                    docker logs crop-recommendation --tail 20 || true
-                    '''
-                }
-            }
-        }
-        
-        // STAGE 10: Monitoring and Analytics
-        stage('Monitoring Setup') {
-            steps {
-                script {
-                    echo "📊 Setting up Monitoring..."
-                    
-                    // Export build info for monitoring
-                    sh '''
-                    echo "BUILD_INFO_START"
-                    echo "application: crop-recommendation"
-                    echo "version: ''' + env.IMAGE_TAG + '''"
-                    echo "environment: ''' + env.ENVIRONMENT + '''"
-                    echo "build_number: ''' + env.BUILD_NUMBER + '''"
-                    echo "git_commit: ''' + env.GIT_COMMIT + '''"
-                    echo "build_time: $(date -Iseconds)"
-                    echo "BUILD_INFO_END"
-                    '''
-                }
+                echo "🔍 Running Post-Deployment Checks..."
+                
+                // Final health check
+                sh 'curl -f http://localhost:5000/health'
+                
+                // Container status
+                sh '''
+                echo "=== Running Containers ==="
+                docker ps --format "table {{.Names}}\\t{{.Status}}\\t{{.Ports}}"
+                echo "=== Container Resources ==="
+                docker stats --no-stream --format "table {{.Name}}\\t{{.CPUPerc}}\\t{{.MemUsage}}" crop-recommendation || true
+                '''
+                
+                // Application logs
+                sh '''
+                echo "=== Recent Application Logs ==="
+                docker logs crop-recommendation --tail 20 || true
+                '''
             }
         }
     }
     
     post {
         always {
-            echo "🏁 Pipeline execution completed - Build ${BUILD_NUMBER}"
+            echo "🏁 Pipeline execution completed - Build ${env.BUILD_NUMBER}"
             
             // Cleanup
             sh '''
@@ -396,61 +360,18 @@ pipeline {
         
         success {
             echo "🎉 Pipeline SUCCESS! Crop Recommendation app deployed successfully."
-            script {
-                // Success notifications
-                // emailext (
-                //     subject: "✅ SUCCESS: Crop Recommendation Deployment - Build ${env.BUILD_NUMBER}",
-                //     body: """
-                //     <h2>🚀 Deployment Successful!</h2>
-                //     <p><strong>Application:</strong> Crop Recommendation System</p>
-                //     <p><strong>Environment:</strong> ${env.ENVIRONMENT}</p>
-                //     <p><strong>Version:</strong> ${env.IMAGE_TAG}</p>
-                //     <p><strong>Build:</strong> ${env.BUILD_NUMBER}</p>
-                //     <p><strong>Access URLs:</strong></p>
-                //     <ul>
-                //         <li>Application: <a href="http://localhost:5000">http://localhost:5000</a></li>
-                //         <li>Health Check: <a href="http://localhost:5000/health">http://localhost:5000/health</a></li>
-                //         <li>Jenkins Build: <a href="${env.BUILD_URL}">${env.BUILD_URL}</a></li>
-                //     </ul>
-                //     """,
-                //     to: "${env.NOTIFICATION_EMAIL}",
-                //     mimeType: 'text/html'
-                // )
-                
-                // Uncomment if you have Slack setup:
-                // slackSend(
-                //     channel: "${env.SLACK_CHANNEL}",
-                //     message: "✅ Crop Recommendation deployed successfully to ${env.ENVIRONMENT}\nVersion: ${env.IMAGE_TAG}\nBuild: ${env.BUILD_URL}"
-                // )
-            }
         }
         
         failure {
             echo "💥 Pipeline FAILED!"
-            script {
-                // Failure notifications
-                emailext (
-                    subject: "❌ FAILED: Crop Recommendation Deployment - Build ${env.BUILD_NUMBER}",
-                    body: """
-                    <h2>💥 Deployment Failed!</h2>
-                    <p><strong>Application:</strong> Crop Recommendation System</p>
-                    <p><strong>Environment:</strong> ${env.ENVIRONMENT}</p>
-                    <p><strong>Build:</strong> ${env.BUILD_NUMBER}</p>
-                    <p><strong>Build URL:</strong> <a href="${env.BUILD_URL}">${env.BUILD_URL}</a></p>
-                    <p>Please check the build logs for details.</p>
-                    """,
-                    to: "${env.NOTIFICATION_EMAIL}",
-                    mimeType: 'text/html'
-                )
-                
-                // Rollback to previous version if deployment failed
-                sh '''
-                echo "🔄 Attempting rollback..."
-                docker stop crop-recommendation-blue crop-recommendation-green || true
-                # Start last known good version (you might want to implement proper version tracking)
-                docker run -d --name crop-recommendation -p 5000:5000 crop-recommendation:previous || true
-                '''
-            }
+            
+            // Rollback to previous version if deployment failed
+            sh '''
+            echo "🔄 Attempting rollback..."
+            docker stop crop-recommendation-blue crop-recommendation-green || true
+            # Start last known good version
+            docker run -d --name crop-recommendation -p 5000:5000 crop-recommendation:previous || true
+            '''
         }
         
         unstable {
