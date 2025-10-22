@@ -364,16 +364,16 @@ pipeline {
                     echo "📊 Setting up Monitoring..."
                     
                     // Export build info for monitoring
-                    sh """
+                    sh '''
                     echo "BUILD_INFO_START"
                     echo "application: crop-recommendation"
-                    echo "version: ${IMAGE_TAG}"
-                    echo "environment: ${ENVIRONMENT}"
-                    echo "build_number: ${BUILD_NUMBER}"
-                    echo "git_commit: ${GIT_COMMIT}"
+                    echo "version: ''' + env.IMAGE_TAG + '''"
+                    echo "environment: ''' + env.ENVIRONMENT + '''"
+                    echo "build_number: ''' + env.BUILD_NUMBER + '''"
+                    echo "git_commit: ''' + env.GIT_COMMIT + '''"
                     echo "build_time: $(date -Iseconds)"
                     echo "BUILD_INFO_END"
-                    """
+                    '''
                 }
             }
         }
