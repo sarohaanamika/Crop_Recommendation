@@ -33,7 +33,7 @@ pipeline {
             steps {
                 sh '''
                 echo "🏗️ Building Docker Image..."
-                docker build -t ${IMAGE_NAME}:latest -t ${IMAGE_NAME}:${BUILD_NUMBER} .
+                docker build -t ${IMAGE_NAME}:${BUILD_NUMBER} -t ${IMAGE_NAME}:latest .
                 '''
             }
         }
@@ -48,75 +48,49 @@ pipeline {
                 docker run --rm ${IMAGE_NAME}:latest python3 -c "import xgboost; print('✅ XGBoost import successful')" || echo "⚠️ XGBoost not available"
                 
                 # Test application startup
-                docker run -d --name test-container -p 5001:5000 ${IMAGE_NAME}:latest
+                docker run -d --name test-container -p 5004:5000 ${IMAGE_NAME}:latest
                 sleep 10
                 echo "=== Testing health endpoint ==="
-                curl -f http://localhost:5001/health || echo "Health check failed"
+                curl -f http://localhost:5004/health || echo "Health check failed"
                 docker stop test-container
                 docker rm test-container
                 '''
             }
         }
         
-        // STAGE 4: Deploy Application
-        stage('Deploy Application') {
-            steps {
-                sh '''
-                echo "🚀 Deploying Application..."
-                # Stop and remove any existing container
-                docker stop ${IMAGE_NAME} || true
-                docker rm ${IMAGE_NAME} || true
-                
-                # Deploy new container
-                docker run -d \
-                  --name ${IMAGE_NAME} \
-                  -p 5000:5000 \
-                  ${IMAGE_NAME}:latest
-                  
-                echo "✅ Application deployed successfully!"
-                '''
-            }
-        }
-        
-        // STAGE 5: Health Check
-        stage('Health Check') {
+        // STAGE 4: Blue-Green Deployment
+        stage('Blue-Green Deployment') {
             steps {
                 script {
-                    echo "🔍 Performing Health Check..."
-                    def maxAttempts = 5
-                    def success = false
+                    echo "🎯 Starting Blue/Green Deployment..."
                     
-                    for (int i = 1; i <= maxAttempts; i++) {
-                        try {
-                            sh 'curl -f http://localhost:5000/health'
-                            echo "✅ Health check passed! (Attempt ${i}/${maxAttempts})"
-                            success = true
-                            break
-                        } catch (Exception e) {
-                            echo "⏳ Health check failed, retrying in 5 seconds... (Attempt ${i}/${maxAttempts})"
-                            sleep time: 5, unit: 'SECONDS'
-                        }
-                    }
+                    // Make sure scripts are executable
+                    sh 'chmod +x scripts/*.sh'
                     
-                    if (!success) {
-                        echo "⚠️ Health check failed after ${maxAttempts} attempts, but continuing..."
-                        // Don't fail the pipeline for health check in development
-                    }
+                    // Use our automated blue/green deployment script
+                    sh './scripts/switch-env-macos.sh'
                 }
             }
         }
         
-        // STAGE 6: Post-Deployment Verification
+        // STAGE 5: Post-Deployment Verification
         stage('Post-Deployment Verification') {
             steps {
                 sh '''
-                echo "📊 Post-Deployment Status ==="
-                echo "=== Running Containers ==="
-                docker ps --format "table {{.Names}}\\t{{.Status}}\\t{{.Ports}}"
-                echo "=== Application Logs (last 10 lines) ==="
-                docker logs ${IMAGE_NAME} --tail 10 || true
-                echo "=== Resource Usage ==="
-                docker stats ${IMAGE_NAME} --no-stream || true
+                echo "🔍 Post-Deployment Verification ==="
+                echo "=== Testing through Nginx ==="
+                curl -f http://localhost:8080/health || echo "Nginx health check failed"
+                
+                echo "=== Testing Blue directly ==="
+                curl -f http://localhost:5002/health || echo "Blue direct check failed"
+                
+                echo "=== Testing Green directly ==="
+                curl -f http://localhost:5003/health || echo "Green direct check failed"
+                
+                echo "=== Container Status ==="
+                docker-compose ps --services | while read service; do
+                    echo "- $service"
+                done
                 '''
             }
         }
@@ -126,35 +100,27 @@ pipeline {
         always {
             echo "🏁 Pipeline execution completed - Build ${BUILD_NUMBER}"
             
-            // Cleanup temporary resources
+            // Cleanup test containers
             sh '''
-            echo "🧹 Cleaning up temporary resources..."
+            echo "🧹 Cleaning up test resources..."
             docker stop test-container || true
             docker rm test-container || true
             docker system prune -f || true
             '''
-            
-            // Archive any test results if they exist
-            archiveArtifacts artifacts: '**/*.json, **/*.html, **/*.xml', allowEmptyArchive: true
         }
         
         success {
-            echo "🎉 Pipeline SUCCESS!"
-            echo "📱 Application URL: http://localhost:5000"
-            echo "❤️  Health Check: http://localhost:5000/health"
+            echo "🎉 Pipeline SUCCESS! Blue/Green deployment completed."
+            echo "📱 Application URL: http://localhost:8080"
+            echo "❤️  Health Check: http://localhost:8080/health"
         }
         
         failure {
             echo "💥 Pipeline FAILED!"
             // Cleanup on failure
             sh '''
-            docker stop ${IMAGE_NAME} || true
-            docker rm ${IMAGE_NAME} || true
+            docker-compose down || true
             '''
-        }
-        
-        unstable {
-            echo "⚠️ Pipeline completed with warnings"
         }
     }
 }
