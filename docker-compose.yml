@@ -1,18 +1,53 @@
-version: '3.8'
 services:
-  web:
+  nginx-proxy:
+    image: nginx:alpine
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+      - ./nginx.blue.conf:/etc/nginx/nginx.blue.conf
+      - ./nginx.green.conf:/etc/nginx/nginx.green.conf
+    container_name: nginx-proxy
+    restart: unless-stopped
+    networks:
+      - crop-network
+
+  crop-recommendation-blue:
     build: .
     ports:
-      - "5000:5000"
+      - "5002:5000"
     environment:
-      - FLASK_ENV=production
-      - PYTHONUNBUFFERED=1
-    volumes:
-      - ./app:/app/app
-      - ./models:/app/models
+      - ENVIRONMENT=blue
+      - VERSION=blue-initial
+    container_name: crop-recommendation-blue
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
-      interval: 30s
-      timeout: 10s
+      interval: 10s
+      timeout: 5s
       retries: 3
+      start_period: 30s
+    networks:
+      - crop-network
+
+  crop-recommendation-green:
+    build: .
+    ports:
+      - "5003:5000"
+    environment:
+      - ENVIRONMENT=green
+      - VERSION=green-initial
+    container_name: crop-recommendation-green
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - crop-network
+
+networks:
+  crop-network:
+    driver: bridge

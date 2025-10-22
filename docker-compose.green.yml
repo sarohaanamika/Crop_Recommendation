@@ -1,0 +1,17 @@
+version: '3.8'
+services:
+  crop-recommendation-green:
+    build: .
+    ports:
+      - "5003:5000"
+    environment:
+      - ENVIRONMENT=green
+      - VERSION=green-${BUILD_NUMBER:-latest}
+    container_name: crop-recommendation-green
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
