@@ -51,3 +51,4 @@ logs/
 .env
 .env.local
 .env.production
+.terraform/
