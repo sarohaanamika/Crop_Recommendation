@@ -43,15 +43,29 @@ pipeline {
             steps {
                 sh '''
                 echo "🔧 Testing Docker Image..."
+                
                 # Test basic imports
                 docker run --rm ${IMAGE_NAME}:latest python3 -c "import flask; print('✅ Flask import successful')"
-                docker run --rm ${IMAGE_NAME}:latest python3 -c "import xgboost; print('✅ XGBoost import successful')" || echo "⚠️ XGBoost not available"
+                docker run --rm ${IMAGE_NAME}:latest python3 -c "import xgboost; print('✅ XGBoost import successful')"
                 
-                # Test application startup
+                # Test application startup with more debugging
+                echo "=== Starting test container ==="
                 docker run -d --name test-container -p 5004:5000 ${IMAGE_NAME}:latest
-                sleep 10
+                
+                echo "=== Checking container status ==="
+                docker ps -a | grep test-container
+                docker logs test-container
+                
+                echo "=== Waiting for app to start ==="
+                sleep 15
+                
                 echo "=== Testing health endpoint ==="
-                curl -f http://localhost:5004/health || echo "Health check failed"
+                curl -v http://localhost:5004/health || echo "Health check failed"
+                
+                # Check what's running in the container
+                echo "=== Container processes ==="
+                docker exec test-container ps aux || echo "Cannot exec into container"
+                
                 docker stop test-container
                 docker rm test-container
                 '''
