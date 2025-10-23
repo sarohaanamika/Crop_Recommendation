@@ -2,6 +2,13 @@
 
 A complete DevOps pipeline demonstrating CI/CD, containerization, monitoring, and blue-green deployment strategies for a machine learning-powered crop recommendation system.
 
+![Docker](https://img.shields.io/badge/Docker-2496ED?style=flat&logo=docker&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3776AB?style=flat&logo=python&logoColor=white)
+![Flask](https://img.shields.io/badge/Flask-000000?style=flat&logo=flask&logoColor=white)
+![Nginx](https://img.shields.io/badge/Nginx-009639?style=flat&logo=nginx&logoColor=white)
+![Prometheus](https://img.shields.io/badge/Prometheus-E6522C?style=flat&logo=prometheus&logoColor=white)
+![CI/CD](https://img.shields.io/badge/CI%2FCD-Automated-success)
+
 ## 🚀 Project Overview
 
 This project implements a full-stack DevOps solution featuring:
